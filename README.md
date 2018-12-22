@@ -1,5 +1,5 @@
 # yOpenApi
-yOpenApi uses ySanic introspection to generate [OpenApi v3](https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.1.md) definition for you API
+yOpenApi uses ySanic introspection to generate [OpenApi v3](https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.1.md) definition for your API
 
 ## How to use it
 Subclass ySanic and add yOpenApi as a superclass too
