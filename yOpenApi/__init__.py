@@ -6,11 +6,9 @@ class yOpenSanic():
       "openapi": "3.0.1", "info": self._openapi_v3_info(), "servers": self._openapi_v3_servers(), "paths": self._openapi_v3_paths(),
       "components": {"schemas": self._openapi_v3_schemas()}
     }
-    if hasattr(self, "auth"):
+    rootClass = getattr(self.models, list(filter(lambda tup: tup[1]["type"] == "root", self._inspected.items()))[0][0])
+    if "yAuth" in [base.__name__ for base in rootClass.__bases__]:
       result["components"]["securitySchemes"] = self._openapi_v3_security()
-
-    # if hasattr(self, "auth"):
-    #   self._process_auth()
 
     return result
 
@@ -42,11 +40,14 @@ class yOpenSanic():
 
     return paths
 
-  def _operation_security(self, decorators):
-    if callable(decorators["allowed"]["condition"]):
-      return {"description": decorators["allowed"]["condition"].__doc__, "name": decorators["allowed"]["condition"].__name__}
-    else:
-      return decorators["allowed"]["condition"]
+  def _operation_security(self, method):
+    if "allowed" in method.__decorators__:
+      if callable(method.__decorators__["allowed"]["condition"]):
+        return {"description": method.__decorators__["allowed"]["condition"].__doc__, "name": method.__decorators__["allowed"]["condition"].__name__}
+      else:
+        return method.__decorators__["allowed"]["condition"]
+    elif "permission" in method.__decorators__:
+      return method.__qualname__.replace("__call__", "call").replace(".", "/")
 
   def _v3_tree(self, name, model):
     model_class = getattr(self.models, name)
@@ -70,8 +71,8 @@ class yOpenSanic():
             result[url]["parameters"] = [{"name": "{}_Path".format(name), "in": "path", "required": True, "schema": {"type": "string"}}]
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
             
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
       if "removers" in model["out"]:
         verb = "delete"
@@ -89,8 +90,9 @@ class yOpenSanic():
             result[url]["parameters"] = [{"name": "{}_Path".format(name), "in": "path", "required": True, "schema": {"type": "string"}}]
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
     if "in" in model:
       if "factories" in model["in"]:
@@ -118,8 +120,9 @@ class yOpenSanic():
             result[url][verb]["requestBody"] = self._v3_requestBody(data["decorators"]["consumes"])
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
       if "updaters" in model["in"]:
         verb = "put"
@@ -142,8 +145,9 @@ class yOpenSanic():
             result[url][verb]["requestBody"] = self._v3_requestBody(data["decorators"]["consumes"])
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
     return result
 
@@ -168,8 +172,9 @@ class yOpenSanic():
 
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
       if "removers" in model["out"]:
         verb = "delete"
@@ -186,8 +191,9 @@ class yOpenSanic():
 
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
     if "in" in model:
       if "factories" in model["in"]:
@@ -210,8 +216,9 @@ class yOpenSanic():
             result[url][verb].update(self._v3_consumes(data["decorators"]["consumes"]))
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
       if "updaters" in model["in"]:
         verb = "put"
@@ -229,8 +236,9 @@ class yOpenSanic():
             result[url][verb].update(self._v3_consumes(data["decorators"]["consumes"]))
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
 
-            if "allowed" in data["method"].__decorators__:
-              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"].__decorators__)
+            # if "allowed" in data["method"].__decorators__:
+            if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
+              result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
     return result
 
@@ -464,8 +472,10 @@ class yOpenSanic():
       return "array"
     elif field.__class__.__name__ in ["Decimal", "Float"]:
       return "number"
+    elif field.__class__.__name__ in ["yGeoField"]:
+      return "geo"
     elif field.__class__.__name__ in ["Dict"]:
-        return "object"
+      return "object"
     else:
       return field.__class__.__name__.lower()
 
@@ -552,6 +562,11 @@ class yOpenSanic():
         if validator.equal is not None:
           schema["maxItems"] = validator.equal
           schema["minItems"] = validator.equal
+
+    return schema
+
+  def geo(self, field):
+    schema = {"type": "object", "x-yrest-input_type": "geo"}
 
     return schema
 
