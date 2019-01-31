@@ -1,6 +1,11 @@
 from marshmallow.validate import Regexp
 
+from sanic import response
+
 class yOpenSanic():
+  async def openapi(self, request):
+    return response.json(self.openapi_v3())
+
   def openapi_v3(self):
     result = {
       "openapi": "3.0.1", "info": self._openapi_v3_info(), "servers": self._openapi_v3_servers(), "paths": self._openapi_v3_paths(),
