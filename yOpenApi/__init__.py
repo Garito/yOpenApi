@@ -471,7 +471,7 @@ class yOpenSanic():
     self.log.info(self.auth.config.path_to_verify())
 
   def marshmallow2openapiTypes(self, field):
-    if field.__class__.__name__ in ["ObjectId", "UUID", "DateTime", "LocalDateTime", "Date", "TimeDelta", "Url", "Email"]:
+    if field.__class__.__name__ in ["ObjectId", "UUID", "DateTime", "Date", "TimeDelta", "Url", "Email"]:
       return "string"
     elif field.__class__.__name__ in ["List"]:
       return "array"
