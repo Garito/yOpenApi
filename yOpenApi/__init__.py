@@ -1,6 +1,9 @@
-from marshmallow.validate import Regexp
+from marshmallow import fields
+from marshmallow.validate import Length, Range, Regexp
 
 from sanic import response
+
+from yModel.mongo import ObjectId, Decimal
 
 class yOpenSanic():
   async def openapi(self, request):
@@ -16,6 +19,13 @@ class yOpenSanic():
       result["components"]["securitySchemes"] = self._openapi_v3_security()
 
     return result
+
+  def schema2model(self, name, schema):
+    fields = {}
+    for prop_name, prop in schema["properties"].items():
+      fields[prop_name] = self.openapiType2marshmallow(prop, prop_name in schema["required"])
+
+    return type(name, (self.models.MongoTree,), fields)
 
   def _openapi_v3_info(self):
     return {
@@ -460,16 +470,6 @@ class yOpenSanic():
   def _openapi_v3_security(self):
     return {"BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}
 
-  def _process_auth(self):
-    from json import dumps
-
-    self.log.info(dumps(dir(self.auth), indent = 2))
-    self.log.info(dumps(dir(self.auth.config), indent = 2))
-    self.log.info(self.auth.config.path_to_authenticate())
-    self.log.info(self.auth.config.path_to_refresh())
-    self.log.info(self.auth.config.path_to_retrieve_user())
-    self.log.info(self.auth.config.path_to_verify())
-
   def marshmallow2openapiTypes(self, field):
     if field.__class__.__name__ in ["ObjectId", "UUID", "DateTime", "Date", "TimeDelta", "Url", "Email"]:
       return "string"
@@ -483,6 +483,20 @@ class yOpenSanic():
       return "object"
     else:
       return field.__class__.__name__.lower()
+
+  def openapiType2marshmallow(self, schema, required):
+    if schema["type"] == "string":
+      return self.from_string(schema, required)
+    elif schema["type"] == "array":
+      return self.from_array(schema, required)
+    elif schema["type"] == "number":
+      return self.from_number(schema, required)
+    elif schema["type"] == "geo":
+      return self.from_geo(schema, required)
+    elif schema["type"] == "object":
+      return self.from_object(schema, required)
+    else:
+      return getattr(self, "from_{}".format(schema["type"]))
 
   def string(self, field):
     schema = {"type": "string"}
@@ -512,6 +526,34 @@ class yOpenSanic():
 
     return schema
 
+  def from_string(self, schema, required):
+    params = {}
+    if required:
+      params["required"] = required
+
+    length_params = {}
+    if "maxLength" in schema:
+      length_params["max"] = schema["maxLength"]
+    if "minLength" in schema:
+      length_params["min"] = schema["minLength"]
+    if length_params:
+      params["validate"] = Length(**length_params)
+
+    if schema.get("format", None) == "date":
+      return fields.Date(**params)
+    elif schema.get("format", None) == "date-time":
+      return fields.DateTime(**params)
+    elif schema.get("format", None) == "email":
+      return fields.Email(**params)
+    elif schema.get("format", None) == "uuid":
+      return fields.UUID(**params)
+    elif schema.get("format", None) == "uri":
+      return fields.Url(**params)
+    elif schema["type"] == ["string", "null"]:
+      return ObjectId(**params)
+    else:
+      return fields.Str(**params)
+
   def number(self, field):
     schema = {"type": "number"}
 
@@ -531,6 +573,24 @@ class yOpenSanic():
 
     return schema
 
+  def from_number(self, schema, required):
+    params = {}
+    if required:
+      params["required"] = required
+
+    range_params = {}
+    if "maximum" in schema:
+      range_params["max"] = schema["maximum"]
+    if "minimum" in schema:
+      range_params["min"] = schema["minimum"]
+    if range_params:
+      params["validate"] = range_params
+
+    if schema.get("format", None) == "float":
+      return fields.Float(**params)
+    else:
+      return Decimal(**params)
+
   def integer(self, field):
     schema = {"type": "integer"}
 
@@ -544,8 +604,26 @@ class yOpenSanic():
 
     return schema
 
+  def from_integer(self, schema, required):
+    params = {}
+    if required:
+      params["required"] = required
+    
+    range_params = {}
+    if "maximum" in schema:
+      range_params["max"] = schema["maximum"]
+    if "minimum" in schema:
+      range_params["min"] = schema["minimum"]
+    if range_params:
+      params["validate"] = range_params
+
+    return fields.Int(**params)
+
   def boolean(self, field):
     return {"type": "boolean"}
+
+  def from_boolean(self, schema, required):
+    return fields.Bool(required = required)
 
   def array(self, field):
     schema = {"type": "array", "items": {"type": self.marshmallow2openapiTypes(field.container)}}
@@ -570,12 +648,43 @@ class yOpenSanic():
 
     return schema
 
-  def geo(self, field):
-    schema = {"type": "object", "x-yrest-input_type": "geo"}
+  def from_array(self, schema, required):
+    params = {}
+    range_params = {}
+    if "maximum" in schema:
+      range_params["max"] = schema["maximum"]
+    if "minimum" in schema:
+      range_params["min"] = schema["minimum"]
+    
+    length_params = {}
+    if "maxItems" in schema and "minItems" in schema:
+      length_params["equal"] = schema["maxItems"]
+    else:
+      if "maxItems" in schema:
+        length_params["max"] = schema["maxItems"]
+      if "minItems" in schema:
+        length_params["min"] = schema["minItems"]
 
-    return schema
+    if range_params and length_params:
+      params["validate"] = [Range(**range_params), Length(**length_params)]
+    else:
+      if range_params:
+        params["validate"] = Range(**range_params)
+      if length_params:
+        params["validate"] = Length(**length_params)
+
+    submodel = self.openapiType2marshmallow(schema["items"], False)
+    return fields.List(submodel.__class__, **params)
+
+  def geo(self, field):
+    return {"type": "object", "x-yrest-input_type": "geo"}
+
+  def from_geo(self, schema, required):
+    from yGeoField import yGeoField
+    return yGeoField(required = required)
 
   def object(self, field):
-    schema = {"type": "object"}
+    return {"type": "object"}
 
-    return schema
+  def from_object(self, schema, required):
+    return fields.Dict(required = required)
