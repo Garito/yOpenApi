@@ -523,6 +523,8 @@ class yOpenSanic():
 
         if validator.min is not None:
           schema["minLength"] = validator.min
+      if validator.__class__.__name__ == "OneOf":
+        schema["oneOf"] = list(zip(validator.choices, validator.labels)) if validator.labels else validator.choices
 
     return schema
 
@@ -538,6 +540,8 @@ class yOpenSanic():
       length_params["min"] = schema["minLength"]
     if length_params:
       params["validate"] = Length(**length_params)
+
+    # Needs to check for OneOf validator
 
     if schema.get("format", None) == "date":
       return fields.Date(**params)
@@ -645,6 +649,8 @@ class yOpenSanic():
         if validator.equal is not None:
           schema["maxItems"] = validator.equal
           schema["minItems"] = validator.equal
+      elif validator.__class__.__name__ == "ContainsOnly":
+        schema["enum"] = list(zip(validator.choices, validator.labels)) if validator.labels else validator.choices
 
     return schema
 
@@ -672,6 +678,8 @@ class yOpenSanic():
         params["validate"] = Range(**range_params)
       if length_params:
         params["validate"] = Length(**length_params)
+    
+    # Needs to check for ContainsOnly validator
 
     submodel = self.openapiType2marshmallow(schema["items"], False)
     return fields.List(submodel.__class__, **params)
