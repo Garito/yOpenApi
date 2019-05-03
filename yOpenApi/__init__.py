@@ -3,7 +3,13 @@ from marshmallow.validate import Length, Range, Regexp
 
 from sanic import response
 
-from yModel.mongo import ObjectId, Decimal
+from yModel.mongo import ObjectId, Decimal, DateTime
+
+try:
+  from yGeoField import yGeoField
+except:
+  class yGeoField():
+    pass
 
 class yOpenSanic():
   async def openapi(self, request):
@@ -46,10 +52,7 @@ class yOpenSanic():
       if model["type"] == "independent":
         paths.update(self._v3_independent(model_name, model))
       elif model["type"] == "root":
-        paths.update(self._v3_root(model_name, model))
-
-        if model["recursive"]:
-          paths.update(self._v3_tree(model_name, model))
+        paths.update(getattr(self, '_v3_tree' if model["recursive"] else '_v3_root')(model_name, model))
       elif model["type"] == "tree":
         paths.update(self._v3_tree(model_name, model))
 
@@ -471,15 +474,15 @@ class yOpenSanic():
     return {"BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}
 
   def marshmallow2openapiTypes(self, field):
-    if field.__class__.__name__ in ["ObjectId", "UUID", "DateTime", "Date", "TimeDelta", "Url", "Email"]:
+    if isinstance(field, (ObjectId, fields.UUID, DateTime, fields.DateTime, fields.Date, fields.TimeDelta, fields.Url, fields.Email)):
       return "string"
-    elif field.__class__.__name__ in ["List"]:
+    elif isinstance(field, fields.List):
       return "array"
-    elif field.__class__.__name__ in ["Decimal", "Float"]:
+    elif isinstance(field, (Decimal, fields.Float)):
       return "number"
-    elif field.__class__.__name__ in ["yGeoField"]:
+    elif isinstance(field, yGeoField):
       return "geo"
-    elif field.__class__.__name__ in ["Dict"]:
+    elif isinstance(field, fields.Dict):
       return "object"
     else:
       return field.__class__.__name__.lower()

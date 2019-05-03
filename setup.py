@@ -28,5 +28,8 @@ setup(
     "yModel",
     "ySanic"
   ],
+  extras_require = {
+    "yGeoField": ["yGeoField"]
+  },
   test_suite = "unittest"
 )
