@@ -462,8 +462,7 @@ class yOpenSanic():
         for key, value in field.metadata.items():
           schema["properties"][field.name]["{}{}".format(metadata_prefix, key.lower())] = value
 
-    if required:
-      schema["required"] = required
+    schema["required"] = required
 
     if hasattr(model, "form"):
       schema["{}form".format(metadata_prefix)] = model.form
