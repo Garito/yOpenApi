@@ -12,6 +12,205 @@ except:
     pass
 
 class yOpenSanic():
+  def _add_openapi_route(self):
+    self._route_adder("", "/openapi", "GET", self.openapi)
+
+  async def openapi(self, request):
+    return response.json(await self.v3(request))
+
+  async def v3(self, request):
+    return {
+      "openapi": "3.0.1", "info": self._info(), "servers": self._servers(), "paths": self._paths(), "components": self._components()
+    }
+
+  def _info(self):
+    return {
+      "title": self.config["TITLE"],
+      "description": self.config["DESCRIPTION"],
+      "termsOfService": self.config["TERMS_OF_SERVICE"],
+      "contact": self.config["CONTACT"],
+      "license": self.config["LICENSE"],
+      "version": self.config["VERSION"]
+    }
+
+  def _servers(self):
+    return [{"url": self.config["API_SERVER_NAME"], "description": "{}'s main server".format(self.config.get("TITLE", "API"))}]
+
+  def _paths(self):
+    routes = {}
+    routes.update(self._checkings["root"][2]["routes"])
+    for tree in self._checkings["trees"]:
+      routes.update(tree[2]["routes"])
+
+    return routes
+
+  def _components(self):
+    components = {"parameters": {}, "schemas": {}}
+    for model in [self._checkings["root"]] + self._checkings["trees"]:
+      keys = model[2].keys()
+      if "params" in keys:
+        components["parameters"].update(model[2]["params"])
+      if "schemas" in keys:
+        for schemaName, schema in model[2]["schemas"].items():
+          components["schemas"][schemaName] = self._v3_schema(schema())
+
+    root = self._checkings["root"]
+    yAuth = getattr(self.models, "yAuth", None)
+    if issubclass(root[1], yAuth):
+      components["securitySchemes"] = {"BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}
+    # perms = self.models.Permission(self.table, many = True)
+    # await perms.get(type = "Permission", many = True)
+    # for perm in perms.to_plain_dict():
+    #   name = "call" if perm["name"] == "__call__" else perm["name"]
+    #   components["securitySchemes"]["{}_{}".format(perm["context"], name)] = perm["roles"]
+
+    # from json import dumps
+    # print(dumps(components, indent = 2))
+
+    return components
+
+  def _v3_schema(self, model):
+    schema = {"type": "object", "properties": {}}
+    required = []
+
+    metadata_prefix = self.config.get("OAV3_METADATA_PREFIX", "x-yrest-")
+    exclusions = getattr(model, "exclusions", False)
+    for field_name in model.fields:
+      if not exclusions or field_name not in exclusions:
+        field = model.fields[field_name]
+        schema["properties"][field.name] = {}
+
+        if field.required:
+          required.append(field.name)
+
+        schema["properties"][field.name] = getattr(self, self.marshmallow2openapiTypes(field))(field)
+
+        regex = list(filter(lambda validator: isinstance(validator, Regexp), field.validate or []))
+        if regex:
+          schema["properties"][field.name]["pattern"] = regex[0].regex.pattern
+
+        for key, value in field.metadata.items():
+          schema["properties"][field.name]["{}{}".format(metadata_prefix, key.lower())] = value
+
+    if required:
+      schema["required"] = required
+
+    if hasattr(model, "form"):
+      schema["{}form".format(metadata_prefix)] = model.form
+
+    return schema
+
+  def marshmallow2openapiTypes(self, field):
+    if isinstance(field, (ObjectId, fields.UUID, DateTime, fields.DateTime, fields.Date, fields.TimeDelta, fields.Url, fields.Email)):
+      return "string"
+    elif isinstance(field, fields.List):
+      return "array"
+    elif isinstance(field, (Decimal, fields.Float)):
+      return "number"
+    elif isinstance(field, yGeoField):
+      return "geo"
+    elif isinstance(field, fields.Dict):
+      return "object"
+    else:
+      return field.__class__.__name__.lower()
+
+  def string(self, field):
+    schema = {"type": "string"}
+
+    class_name = field.__class__.__name__
+    if class_name == "Date":
+      schema["format"] = "date"
+    elif class_name == "DateTime":
+      schema["format"] = "date-time"
+    elif class_name == "Email":
+      schema["format"] = "email"
+    elif class_name == "UUID":
+      schema["format"] = "uuid"
+    elif class_name == "Url":
+      schema["format"] = "uri"
+    elif class_name == "ObjectId":
+      if field.allow_none:
+        schema["type"] = ["string", "null"]
+
+    for validator in field.validators:
+      if validator.__class__.__name__ == "Length":
+        if validator.max is not None:
+          schema["maxLength"] = validator.max
+
+        if validator.min is not None:
+          schema["minLength"] = validator.min
+      if validator.__class__.__name__ == "OneOf":
+        schema["enum"] = list(zip(validator.choices, validator.labels)) if validator.labels else validator.choices
+
+    return schema
+
+  def number(self, field):
+    schema = {"type": "number"}
+
+    class_name = field.__class__.__name__
+    if class_name == "Float":
+      schema["format"] = "float"
+    elif class_name == "Decimal":
+      schema["format"] = "double"
+
+    for validator in field.validators:
+      if validator.__class__.__name__ == "Range":
+        if validator.max is not None:
+          schema["maximum"] = validator.max
+
+        if validator.min is not None:
+          schema["minimum"] = validator.min
+
+    return schema
+
+  def integer(self, field):
+    schema = {"type": "integer"}
+
+    for validator in field.validators:
+      if validator.__class__.__name__ == "Range":
+        if validator.max is not None:
+          schema["maximum"] = validator.max
+
+        if validator.min is not None:
+          schema["minimum"] = validator.min
+
+    return schema
+
+  def boolean(self, field):
+    return {"type": "boolean"}
+
+  def array(self, field):
+    schema = {"type": "array", "items": {"type": self.marshmallow2openapiTypes(field.container)}}
+
+    for validator in field.validators:
+      if validator.__class__.__name__ == "Range":
+        if validator.max is not None:
+          schema["maximum"] = validator.max
+
+        if validator.min is not None:
+          schema['minimum'] = validator.min
+      elif validator.__class__.__name__ == "Length":
+        if validator.max is not None:
+          schema["maxItems"] = validator.max
+
+        if validator.min is not None:
+          schema["minItems"] = validator.min
+
+        if validator.equal is not None:
+          schema["maxItems"] = validator.equal
+          schema["minItems"] = validator.equal
+      elif validator.__class__.__name__ == "ContainsOnly":
+        schema["enum"] = list(zip(validator.choices, validator.labels)) if validator.labels else validator.choices
+
+    return schema
+
+  def object(self, field):
+    return {"type": "object"}
+
+  def geo(self, field):
+    return {"type": "object", "x-yrest-input_type": "geo"}
+
+class yOpenSanic2():
   async def openapi(self, request):
     return response.json(self.openapi_v3())
 
@@ -88,7 +287,7 @@ class yOpenSanic():
 
             result[url]["parameters"] = [{"name": "{}_Path".format(name), "in": "path", "required": True, "schema": {"type": "string"}}]
             result[url][verb]["responses"] = self._v3_responses(data["decorators"])
-            
+
             if {"allowed", "permission"}.intersection(set(data["method"].__decorators__.keys())):
               result[url][verb]["{}security".format(metadata_prefix)] = self._operation_security(data["method"])
 
@@ -431,7 +630,7 @@ class yOpenSanic():
       self._used_schemas = set()
     self._used_schemas.add(schema)
     result["schema"] = {"$ref": "#/components/schemas/{}".format(schema_name)}
-    
+
     result["style"] = "simple"
 
     return result
@@ -614,7 +813,7 @@ class yOpenSanic():
     params = {}
     if required:
       params["required"] = required
-    
+
     range_params = {}
     if "maximum" in schema:
       range_params["max"] = schema["maximum"]
@@ -638,7 +837,7 @@ class yOpenSanic():
       if validator.__class__.__name__ == "Range":
         if validator.max is not None:
           schema["maximum"] = validator.max
-        
+
         if validator.min is not None:
           schema['minimum'] = validator.min
       elif validator.__class__.__name__ == "Length":
@@ -663,7 +862,7 @@ class yOpenSanic():
       range_params["max"] = schema["maximum"]
     if "minimum" in schema:
       range_params["min"] = schema["minimum"]
-    
+
     length_params = {}
     if "maxItems" in schema and "minItems" in schema:
       length_params["equal"] = schema["maxItems"]
@@ -680,7 +879,7 @@ class yOpenSanic():
         params["validate"] = Range(**range_params)
       if length_params:
         params["validate"] = Length(**length_params)
-    
+
     # Needs to check for ContainsOnly validator
 
     submodel = self.openapiType2marshmallow(schema["items"], False)
