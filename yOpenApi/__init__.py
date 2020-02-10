@@ -12,6 +12,8 @@ except:
     pass
 
 class yOpenSanic():
+  _v3 = None
+
   def _add_openapi_route(self):
     self._route_adder("", "/openapi", "GET", self.openapi)
 
@@ -19,9 +21,11 @@ class yOpenSanic():
     return response.json(await self.v3(request))
 
   async def v3(self, request):
-    return {
-      "openapi": "3.0.1", "info": self._info(), "servers": self._servers(), "paths": self._paths(), "components": self._components()
-    }
+    if self._v3 is None:
+      self._v3 = {
+        "openapi": "3.0.1", "info": self._info(), "servers": self._servers(), "paths": self._paths(), "components": self._components()
+      }
+    return self._v3
 
   def _info(self):
     return {
